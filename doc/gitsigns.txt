@@ -462,6 +462,18 @@ signs                                                  *gitsigns-config-signs*
       For example if `GitSignsAdd` is not defined but `GitGutterAdd` is defined,
       then `GitSignsAdd` will be linked to `GitGutterAdd`.
 
+signs_staged                                    *gitsigns-config-signs_staged*
+      Type: `table[extended]`
+      Default: >
+        {
+          add          = {hl = 'GitSignsStagedAdd'   , text = '┃', numhl='GitSignsStagedAddNr'   , linehl='GitSignsStagedAddLn'    },
+          change       = {hl = 'GitSignsStagedChange', text = '┃', numhl='GitSignsStagedChangeNr', linehl='GitSignsStagedChangeLn' },
+          delete       = {hl = 'GitSignsStagedDelete', text = '▁', numhl='GitSignsStagedDeleteNr', linehl='GitSignsStagedDeleteLn' },
+          topdelete    = {hl = 'GitSignsStagedDelete', text = '▔', numhl='GitSignsStagedDeleteNr', linehl='GitSignsStagedDeleteLn' },
+          changedelete = {hl = 'GitSignsStagedChange', text = '~', numhl='GitSignsStagedChangeNr', linehl='GitSignsStagedChangeLn' },
+        }
+<
+TBD
 keymaps                                              *gitsigns-config-keymaps*
    DEPRECATED
       config.keymaps is now deprecated. Please define mappings in config.on_attach() instead.

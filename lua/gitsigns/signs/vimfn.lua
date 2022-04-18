@@ -1,6 +1,6 @@
 local fn = vim.fn
 
-local Config = require('gitsigns.config').Config
+local SignsConfig = require('gitsigns.config').Config.SignsConfig
 local config = require('gitsigns.config').config
 
 local setdefault = require('gitsigns.util').setdefault
@@ -25,7 +25,6 @@ local sign_map = {
    changedelete = "GitSignsChangeDelete",
 }
 
-local sign_group = 'gitsigns_ns'
 
 
 
@@ -36,19 +35,14 @@ local sign_group = 'gitsigns_ns'
 
 
 
-local placed = {}
-local scheduled = {}
 
-setdefault(placed)
-setdefault(scheduled)
-
-function M.draw(bufnr, top, bot)
+function M.draw(self, bufnr, top, bot)
    local to_place = {}
    for i = top, bot do
-      if scheduled[bufnr][i] then
-         to_place[#to_place + 1] = scheduled[bufnr][i]
-         placed[bufnr][i] = scheduled[bufnr][i]
-         scheduled[bufnr][i] = nil
+      if self.scheduled[bufnr][i] then
+         to_place[#to_place + 1] = self.scheduled[bufnr][i]
+         self.placed[bufnr][i] = self.scheduled[bufnr][i]
+         self.scheduled[bufnr][i] = nil
       end
    end
    if to_place[1] then
@@ -78,7 +72,18 @@ local function define(name, opts, redefine)
    end
 end
 
-function M.setup(redefine)
+local group_base = 'gitsigns_vimfn_signs_'
+
+function M.new(cfg, redefine, name)
+   local self = setmetatable({}, { __index = M })
+   self.group = group_base .. name
+   self.config = cfg
+   self.placed = {}
+   self.scheduled = {}
+
+   setdefault(self.placed)
+   setdefault(self.scheduled)
+
 
    for t, sign_name in pairs(sign_map) do
       local cs = config.signs[t]
@@ -90,71 +95,74 @@ function M.setup(redefine)
          linehl = config.linehl and cs.linehl,
       }, redefine)
    end
+
+   return self
 end
 
-function M.remove(bufnr, start_lnum, end_lnum)
+function M.remove(self, bufnr, start_lnum, end_lnum)
    end_lnum = end_lnum or start_lnum
 
    if start_lnum then
       for lnum = start_lnum, end_lnum do
-         placed[bufnr][lnum] = nil
-         scheduled[bufnr][lnum] = nil
-         fn.sign_unplace(sign_group, { buffer = bufnr, id = lnum })
+         self.placed[bufnr][lnum] = nil
+         self.scheduled[bufnr][lnum] = nil
+         fn.sign_unplace(self.group, { buffer = bufnr, id = lnum })
       end
    else
-      placed[bufnr] = nil
-      scheduled[bufnr] = nil
-      fn.sign_unplace(sign_group, { buffer = bufnr })
+      self.placed[bufnr] = nil
+      self.scheduled[bufnr] = nil
+      fn.sign_unplace(self.group, { buffer = bufnr })
    end
 end
 
-function M.schedule(cfg, bufnr, signs)
-   if not cfg.signcolumn and not cfg.numhl and not cfg.linehl then
+function M.schedule(self, bufnr, signs)
+   if not config.signcolumn and not config.numhl and not config.linehl then
 
       return
    end
 
+   local cfg = self.config
    for _, s in ipairs(signs) do
       local stype = sign_map[s.type]
 
-      local cs = cfg.signs[s.type]
-      if cfg.signcolumn and cs.show_count and s.count then
+      local cs = cfg[s.type]
+      if config.signcolumn and cs.show_count and s.count then
          local count = s.count
-         local cc = cfg.count_chars
+         local cc = config.count_chars
          local count_suffix = cc[count] and tostring(count) or (cc['+'] and 'Plus') or ''
          local count_char = cc[count] or cc['+'] or ''
          stype = stype .. count_suffix
          define(stype, {
             texthl = cs.hl,
-            text = cfg.signcolumn and cs.text .. count_char or '',
-            numhl = cfg.numhl and cs.numhl,
-            linehl = cfg.linehl and cs.linehl,
+            text = config.signcolumn and cs.text .. count_char or '',
+            numhl = config.numhl and cs.numhl,
+            linehl = config.linehl and cs.linehl,
          })
       end
 
-      if not placed[bufnr][s.lnum] then
-         scheduled[bufnr][s.lnum] = {
+      if not self.placed[bufnr][s.lnum] then
+         self.scheduled[bufnr][s.lnum] = {
             id = s.lnum,
-            group = sign_group,
+            group = self.group,
             name = stype,
             buffer = bufnr,
             lnum = s.lnum,
-            priority = cfg.sign_priority,
+            priority = config.sign_priority,
          }
       end
    end
 end
 
-function M.add(cfg, bufnr, signs)
-   M.schedule(cfg, bufnr, signs)
+function M.add(self, bufnr, signs)
+   self:schedule(bufnr, signs)
    for _, s in ipairs(signs) do
-      M.draw(bufnr, s.lnum, s.lnum)
+      self:draw(bufnr, s.lnum, s.lnum)
    end
 end
 
-function M.need_redraw(bufnr, start, last)
+function M.need_redraw(self, bufnr, start, last)
    for i = start + 1, last + 1 do
-      if placed[bufnr][i] then
+      if self.placed[bufnr][i] then
          return true
       end
    end

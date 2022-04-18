@@ -5,7 +5,7 @@ local gs_cache = require('gitsigns.cache')
 local CacheEntry = gs_cache.CacheEntry
 local cache = gs_cache.cache
 
-local signs             = require('gitsigns.signs')
+local Signs             = require('gitsigns.signs')
 
 local Status            = require("gitsigns.status")
 
@@ -26,13 +26,18 @@ local config            = require('gitsigns.config').config
 
 local api = vim.api
 
+local signs: Signs
+local signs_staged: Signs
+
 local record M
   update           : function(integer, CacheEntry, boolean)
   update_debounced : function( bufnr: integer, CacheEntry)
-  apply_win_signs  : function(bufnr: integer, {Hunk}, top: integer, bot: integer)
+  apply_win_signs  : function(bufnr: integer, {Hunk}, {Hunk}, top: integer, bot: integer)
   on_lines         : function(buf: integer, first: integer, last_orig: integer, last_new: integer): boolean
 
   apply_word_diff: function(buf: integer, row: integer)
+
+  detach: function(bufnr: integer, keep_signs: boolean)
 
   setup: function()
 end
@@ -47,27 +52,33 @@ end
 
 local scheduler_if_buf_valid = awrap(schedule_if_buf_valid, 2)
 
-function M.apply_win_signs(bufnr: integer, hunks: {Hunk}, top: integer, bot: integer, clear: boolean)
-  if clear then
-    signs.remove(bufnr)  -- Remove all signs
-  end
+function M.apply_win_signs(bufnr: integer, hunks: {Hunk}, hunks2: {Hunk}, top: integer, bot: integer, clear: boolean)
+  for _, hs in ipairs{
+    {hunks, signs},
+    {hunks2, signs_staged}
+  } do
+    local h, s = hs[1], hs[2]
 
-  -- To stop the sign column width changing too much, if there are signs to be
-  -- added but none of them are visible in the window, then make sure to add at
-  -- least one sign. Only do this on the first call after an update when we all
-  -- the signs have been cleared.
-
-  for i, hunk in ipairs(hunks or {}) do
-    if clear and i == 1
-        or top <= hunk.vend and bot >= hunk.start then
-      signs.schedule(config, bufnr, gs_hunks.calc_signs(hunk))
+    if clear then
+      s:remove(bufnr)  -- Remove all signs
     end
-    if hunk.start > bot then
-      break
-    end
-  end
 
-  signs.draw(bufnr, top, bot)
+    -- To stop the sign column width changing too much, if there are signs to be
+    -- added but none of them are visible in the window, then make sure to add at
+    -- least one sign. Only do this on the first call after an update when we all
+    -- the signs have been cleared.
+    for i, hunk in ipairs(h or {}) do
+      if clear and i == 1
+          or top <= hunk.vend and bot >= hunk.start then
+        s:schedule(bufnr, gs_hunks.calc_signs(hunk))
+      end
+      if hunk.start > bot then
+        break
+      end
+    end
+
+    s:draw(bufnr, top, bot)
+  end
 end
 
 M.on_lines = function(buf: integer, first: integer, _: integer, last_new: integer): boolean
@@ -79,9 +90,10 @@ M.on_lines = function(buf: integer, first: integer, _: integer, last_new: intege
 
   -- Signs in changed regions get invalidated so we need to force a redraw if
   -- any signs get removed.
-  if bcache.hunks and signs.need_redraw(buf, first, last_new) then
+  if bcache.hunks and signs:need_redraw(buf, first, last_new) then
     -- invalidate hunks to force a sign redraw
     bcache.hunks = nil
+    bcache.hunks2 = nil
   end
 
   M.update_debounced(buf, cache[buf])
@@ -205,6 +217,95 @@ local function show_deleted(bufnr: integer)
   end
 end
 
+local function compare_new(a: Hunk, b: Hunk): boolean
+  if a.added.start ~= b.added.start then
+    return false
+  end
+
+  if a.added.count ~= b.added.count then
+    return false
+  end
+
+  local a_lines = a.added.lines
+  local b_lines = b.added.lines
+
+  for i = 1, #a_lines do
+    if a_lines[i] ~= b_lines[i] then
+      return false
+    end
+  end
+
+  return true
+end
+
+-- Return hunks in a using b's hunks as a filter. Only compare the 'new' section
+-- of the hunk.
+--
+-- Eg. Given:
+--
+--     a = {
+--         1 = '@@ -24 +25,1 @@',
+--         2 = '@@ -32 +34,1 @@',
+--         3 = '@@ -37 +40,1 @@'
+--     }
+--
+--     b = {
+--         1 = '@@ -26 +25,1 @@'
+--     }
+--
+-- Since a[1] and b[1] introduce the same changes to the buffer (both have
+-- +25,1), we exclude this hunk in the output so we return:
+--
+--     {
+--         1 = '@@ -32 +34,1 @@',
+--         2 = '@@ -37 +40,1 @@'
+--     }
+--
+local function filter_common(a: {Hunk}, b: {Hunk}): {Hunk}
+  if not a and not b then return end
+  a, b = a or {}, b or {}
+  local max = math.max(#a, #b)
+
+  local ai = 1
+  local bi = 1
+
+  local r: {Hunk} = {}
+
+  for _ = 1, max do
+    local ah, bh = a[ai], b[bi]
+    if not ah then
+      -- Reached the end of a
+      break
+    end
+    if not bh then
+      -- Reached the end of b, add remainder of a
+      for n = ai, #a do
+        r[#r+1] = a[n]
+      end
+      break
+    end
+    if ah.start > bh.start then
+      -- a pointer is ahead of b; increment b pointer
+      bi = bi + 1
+    elseif ah.start < bh.start then
+      -- b pointer is ahead of a; add ah to ret and increment a pointer
+      r[#r+1] = ah
+      ai = ai + 1
+    else
+      -- ah and bh start on the same line, if hunks have the same changes then
+      -- skip (filtered) otherwise add ah to ret and increment both hunk
+      -- pointers
+      if not compare_new(ah, bh) then
+        r[#r+1] = ah
+      end
+      ai = ai + 1
+      bi = bi + 1
+    end
+  end
+
+  return r
+end
+
 local update_cnt = 0
 
 -- Ensure updates cannot be interleaved.
@@ -229,16 +330,23 @@ M.update = throttle_by_id(function(bufnr: integer, bcache: CacheEntry)
     bcache.compare_text = git_obj:get_show_text(bcache:get_compare_rev())
   end
 
-  bcache.hunks = run_diff(bcache.compare_text, buftext)
+  if not bcache.compare_text2 or config._refresh_staged_on_update then
+    bcache.compare_text2 = git_obj:get_show_text('HEAD')
+  end
+
+  bcache.hunks = run_diff(bcache.compare_text , buftext)
+  local hunks2 = run_diff(bcache.compare_text2, buftext)
+  bcache.hunks2 = filter_common(hunks2, bcache.hunks)
 
   scheduler_if_buf_valid(bufnr)
   if gs_hunks.compare_heads(bcache.hunks, old_hunks) then
     -- Apply signs to the window. Other signs will be added by the decoration
     -- provider as they are drawn.
-    M.apply_win_signs(bufnr, bcache.hunks, vim.fn.line('w0'), vim.fn.line('w$'), true)
+    M.apply_win_signs(bufnr, bcache.hunks, bcache.hunks2, vim.fn.line('w0'), vim.fn.line('w$'), true)
 
     show_deleted(bufnr)
   end
+
   local summary = gs_hunks.get_summary(bcache.hunks)
   summary.head = git_obj.repo.abbrev_head
   Status:update(bufnr, summary)
@@ -248,7 +356,15 @@ M.update = throttle_by_id(function(bufnr: integer, bcache: CacheEntry)
   dprintf('updates: %s, jobs: %s', update_cnt, subprocess.job_cnt)
 end)
 
+M.detach = function(bufnr: integer, keep_signs: boolean)
+  if not keep_signs then
+    signs:remove(bufnr)  -- Remove all signs
+  end
+end
+
 M.setup = function()
+  signs        = Signs.new(config.signs       , false)
+  signs_staged = Signs.new(config.signs_staged, false, 'staged')
   M.update_debounced = debounce_trailing(config.update_debounce, void(M.update)) as function(integer, CacheEntry)
 end
 

@@ -5,7 +5,6 @@ local Status = require("gitsigns.status")
 local git = require('gitsigns.git')
 local manager = require('gitsigns.manager')
 local nvim = require('gitsigns.nvim')
-local signs = require('gitsigns.signs')
 local util = require('gitsigns.util')
 local hl = require('gitsigns.highlight')
 
@@ -116,6 +115,7 @@ local watch_gitdir = function(bufnr, gitdir)
       end
 
       bcache.compare_text = nil
+      bcache.compare_text2 = nil
 
       manager.update(bufnr, bcache)
    end))
@@ -149,9 +149,7 @@ M.detach = function(bufnr, _keep_signs)
       return
    end
 
-   if not _keep_signs then
-      signs.remove(bufnr)
-   end
+   manager.detach(bufnr, _keep_signs)
 
 
    Status:clear(bufnr)
@@ -561,7 +559,6 @@ M.setup = void(function(cfg)
 
 
    on_or_after_vimenter(hl.setup_highlights)
-   signs.setup()
 
    setup_command()
 
@@ -573,7 +570,7 @@ M.setup = void(function(cfg)
          if not bcache or not bcache.hunks then
             return false
          end
-         manager.apply_win_signs(bufnr, bcache.hunks, top + 1, bot + 1)
+         manager.apply_win_signs(bufnr, bcache.hunks, bcache.hunks2, top + 1, bot + 1)
 
          if config.word_diff and config.diff_opts.internal then
             for i = top, bot do

@@ -24,7 +24,10 @@ local SchemaElem = {Deprecated = {}, }
 
 
 
-local M = {Config = {DiffOpts = {}, SignsConfig = {}, watch_gitdir = {}, current_line_blame_formatter_opts = {}, current_line_blame_opts = {}, yadm = {}, }, }
+local M = {Config = {DiffOpts = {}, SignConfig = {}, watch_gitdir = {}, current_line_blame_formatter_opts = {}, current_line_blame_opts = {}, yadm = {}, }, }
+
+
+
 
 
 
@@ -147,6 +150,19 @@ M.schema = {
       For example if `GitSignsAdd` is not defined but `GitGutterAdd` is defined,
       then `GitSignsAdd` will be linked to `GitGutterAdd`.
     ]],
+   },
+
+   signs_staged = {
+      type = 'table',
+      deep_extend = true,
+      default = {
+         add = { hl = 'GitSignsStagedAdd', text = '┃', numhl = 'GitSignsStagedAddNr', linehl = 'GitSignsStagedAddLn' },
+         change = { hl = 'GitSignsStagedChange', text = '┃', numhl = 'GitSignsStagedChangeNr', linehl = 'GitSignsStagedChangeLn' },
+         delete = { hl = 'GitSignsStagedDelete', text = '▁', numhl = 'GitSignsStagedDeleteNr', linehl = 'GitSignsStagedDeleteLn' },
+         topdelete = { hl = 'GitSignsStagedDelete', text = '▔', numhl = 'GitSignsStagedDeleteNr', linehl = 'GitSignsStagedDeleteLn' },
+         changedelete = { hl = 'GitSignsStagedChange', text = '~', numhl = 'GitSignsStagedChangeNr', linehl = 'GitSignsStagedChangeLn' },
+      },
+      description = [[TBD]],
    },
 
    keymaps = {

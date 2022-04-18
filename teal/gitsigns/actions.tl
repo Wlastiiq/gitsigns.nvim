@@ -235,11 +235,17 @@ M.stage_hunk = mk_repeatable(void(function(range: {integer, integer})
     hunk = get_cursor_hunk(bufnr, bcache.hunks)
   end
 
+  local invert = false
+  if not hunk then
+    invert = true
+    hunk = get_cursor_hunk(bufnr, bcache.hunks2)
+  end
+
   if not hunk then
     return
   end
 
-  bcache.git_obj:stage_hunks({hunk})
+  bcache.git_obj:stage_hunks({hunk}, invert)
 
   table.insert(bcache.staged_diffs, hunk)
 
@@ -758,9 +764,10 @@ M.blame_line = void(function(opts: BlameOpts)
 end)
 
 local function update_buf_base(buf: integer, bcache: CacheEntry, base: string)
-    bcache.base = base
-    bcache.compare_text = nil
-    update(buf)
+  bcache.base = base
+  bcache.compare_text = nil
+  bcache.compare_text2 = nil
+  update(buf)
 end
 
 --- Change the base revision to diff against. If {base} is not
@@ -1027,12 +1034,13 @@ end
 --- Attributes: ~
 ---     {async}
 M.refresh = void(function()
-  signs.setup(true)
+  signs.new(nil, true)
   require('gitsigns.highlight').setup_highlights()
   require('gitsigns.current_line_blame').setup()
   for k, v in pairs(cache as {integer:CacheEntry}) do
     -- Invalidate cache fields
     v.compare_text = nil
+    v.compare_text2 = nil
     v.hunks = nil
     manager.update(k, v)
   end

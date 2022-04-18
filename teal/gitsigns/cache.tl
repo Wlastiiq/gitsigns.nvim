@@ -8,8 +8,13 @@ local record M
     file          : string
     base          : string
     compare_file  : string    -- For use with externl diff
-    compare_text  : {string}  -- For use with internal diff
+
+    compare_text  : {string}
     hunks         : {Hunk}
+
+    compare_text2 : {string}
+    hunks2        : {Hunk}
+
     staged_diffs  : {Hunk}
     gitdir_watcher : vim.loop.FSPollObj -- Timer object watching the gitdir
     git_obj       : GitObj
